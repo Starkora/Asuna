@@ -1,6 +1,7 @@
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, status
+from fastapi.responses import PlainTextResponse
 
 from config import get_settings
 from schemas import NotifyRequest, NotifyResponse
@@ -52,9 +53,9 @@ def verify_webhook(
     hub_mode: str = Query("", alias="hub.mode"),
     hub_verify_token: str = Query("", alias="hub.verify_token"),
     hub_challenge: str = Query("", alias="hub.challenge"),
-) -> str:
+) -> PlainTextResponse:
     if hub_mode == "subscribe" and hub_verify_token == settings.whatsapp_verify_token:
-        return hub_challenge
+        return PlainTextResponse(content=hub_challenge, status_code=200)
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
