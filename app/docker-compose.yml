@@ -1,0 +1,11 @@
+services:
+  asuna-whatsapp-bot:
+    build: .
+    container_name: asuna-whatsapp-bot
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./notifications.db:/app/notifications.db
