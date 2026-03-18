@@ -70,6 +70,8 @@ Cada evento llama `POST /notify` con telefono y mensaje final para el cliente.
 - `GET /health`
 - `GET /health/live`
 - `GET /health/ready`
+- `GET /privacy-policy`
+- `GET /data-deletion`
 - `GET /webhook`
 - `POST /webhook`
 - `POST /notify`
