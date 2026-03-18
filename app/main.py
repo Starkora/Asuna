@@ -4,10 +4,10 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from config import get_settings
-from schemas import NotifyRequest, NotifyResponse
+from schemas import NotifyRequest, NotifyResponse, TemplateNotifyRequest
 from security import validate_api_key, verify_meta_signature
 from store import NotificationStore
-from whatsapp import WhatsAppProviderError, send_whatsapp_text
+from whatsapp import WhatsAppProviderError, send_whatsapp_template, send_whatsapp_text
 
 
 settings = get_settings()
@@ -182,6 +182,82 @@ def notify(
     except WhatsAppProviderError as exc:
         store.log_event(
             event_type="erp_notify",
+            payload=payload,
+            status="error",
+            phone=request_data.telefono,
+            error_message=str(exc),
+        )
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/notify/template", response_model=NotifyResponse)
+def notify_template(
+    request_data: TemplateNotifyRequest,
+    x_api_key: str | None = Header(default=None, alias="x-api-key"),
+    x_idempotency_key: str | None = Header(default=None, alias="x-idempotency-key"),
+) -> NotifyResponse:
+    validate_api_key(x_api_key, settings.erp_api_key)
+
+    if x_idempotency_key:
+        previous = store.get_processed_response(x_idempotency_key)
+        if previous:
+            return NotifyResponse(
+                **previous,
+                deduplicated=True,
+                idempotency_key=x_idempotency_key,
+            )
+
+    payload = request_data.model_dump()
+    components = [
+        {
+            "type": component.type,
+            "parameters": [
+                {"type": "text", "text": value}
+                for value in component.parameters
+            ],
+        }
+        for component in request_data.components
+        if component.parameters
+    ]
+
+    try:
+        response = send_whatsapp_template(
+            settings=settings,
+            telefono=request_data.telefono,
+            template_name=request_data.template_name,
+            language_code=request_data.language_code,
+            components=components,
+        )
+        message_id = None
+        messages = response.get("messages") if isinstance(response, dict) else None
+        if isinstance(messages, list) and messages:
+            message_id = messages[0].get("id")
+
+        store.log_event(
+            event_type="erp_notify_template",
+            payload=payload,
+            status="sent",
+            phone=request_data.telefono,
+        )
+
+        notify_response = NotifyResponse(
+            ok=True,
+            message_id=message_id,
+            provider_response=response,
+            deduplicated=False,
+            idempotency_key=x_idempotency_key,
+        )
+
+        if x_idempotency_key:
+            store.save_processed_response(
+                x_idempotency_key,
+                notify_response.model_dump(),
+            )
+
+        return notify_response
+    except WhatsAppProviderError as exc:
+        store.log_event(
+            event_type="erp_notify_template",
             payload=payload,
             status="error",
             phone=request_data.telefono,

@@ -7,6 +7,7 @@ Servicio FastAPI para conectar tu ERP con WhatsApp Cloud API.
 - `GET /webhook`: verificacion de Meta
 - `POST /webhook`: recepcion de eventos de WhatsApp
 - `POST /notify`: envio de mensajes desde tu ERP
+- `POST /notify/template`: envio de plantillas aprobadas desde tu ERP
 - `GET /notifications/recent`: consulta de logs recientes
 - `GET /health/live`: liveness probe
 - `GET /health/ready`: readiness probe con validaciones de configuracion
@@ -57,6 +58,31 @@ curl -X POST "http://localhost:8000/notify" \
 
 Si reenvias la misma solicitud con el mismo `x-idempotency-key`, el servicio devolvera la respuesta anterior sin enviar un mensaje duplicado.
 
+## Probar envio con plantilla
+
+Usa este endpoint cuando quieras iniciar conversaciones fuera de la ventana de 24 horas.
+
+```bash
+curl -X POST "http://localhost:8000/notify/template" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: pon-una-clave-segura" \
+  -H "x-idempotency-key: venta-123-template" \
+  -d '{
+    "telefono":"51987654321",
+    "template_name":"venta_confirmada",
+    "language_code":"es_PE",
+    "components":[
+      {"type":"body","parameters":["Juan","V-20260317-0004","16.52"]}
+    ]
+  }'
+```
+
+Ejemplo de plantilla sugerida en Meta:
+
+- Nombre: `venta_confirmada`
+- Categoria: `UTILITY`
+- Texto del body: `Hola {{1}}, tu compra {{2}} por S/ {{3}} fue registrada correctamente.`
+
 ## Integracion sugerida con tu ERP
 
 - Evento `VENTA_COMPLETADA`
@@ -75,6 +101,7 @@ Cada evento llama `POST /notify` con telefono y mensaje final para el cliente.
 - `GET /webhook`
 - `POST /webhook`
 - `POST /notify`
+- `POST /notify/template`
 - `GET /notifications/recent`
 
 ## Produccion con Docker

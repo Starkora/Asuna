@@ -8,28 +8,28 @@ class WhatsAppProviderError(RuntimeError):
     pass
 
 
-def send_whatsapp_text(settings: Settings, telefono: str, mensaje: str) -> dict:
+def _get_messages_url(settings: Settings) -> str:
     if not settings.whatsapp_token:
         raise WhatsAppProviderError("WHATSAPP_TOKEN no configurado")
     if not settings.whatsapp_phone_number_id:
         raise WhatsAppProviderError("WHATSAPP_PHONE_NUMBER_ID no configurado")
 
-    url = (
+    return (
         f"https://graph.facebook.com/{settings.whatsapp_api_version}/"
         f"{settings.whatsapp_phone_number_id}/messages"
     )
 
-    headers = {
+
+def _get_headers(settings: Settings) -> dict:
+    return {
         "Authorization": f"Bearer {settings.whatsapp_token}",
         "Content-Type": "application/json",
     }
 
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": telefono,
-        "type": "text",
-        "text": {"body": mensaje},
-    }
+
+def _post_with_retry(settings: Settings, payload: dict) -> dict:
+    url = _get_messages_url(settings)
+    headers = _get_headers(settings)
 
     last_exception: Exception | None = None
     for attempt in range(1, 4):
@@ -54,3 +54,37 @@ def send_whatsapp_text(settings: Settings, telefono: str, mensaje: str) -> dict:
                 time.sleep(attempt)
 
     raise WhatsAppProviderError(str(last_exception))
+
+
+def send_whatsapp_text(settings: Settings, telefono: str, mensaje: str) -> dict:
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": telefono,
+        "type": "text",
+        "text": {"body": mensaje},
+    }
+
+    return _post_with_retry(settings, payload)
+
+
+def send_whatsapp_template(
+    settings: Settings,
+    telefono: str,
+    template_name: str,
+    language_code: str,
+    components: list[dict] | None = None,
+) -> dict:
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": telefono,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": language_code},
+        },
+    }
+
+    if components:
+        payload["template"]["components"] = components
+
+    return _post_with_retry(settings, payload)
