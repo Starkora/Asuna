@@ -12,9 +12,36 @@ Servicio FastAPI para conectar tu ERP con WhatsApp Cloud API.
 - `GET /health/live`: liveness probe
 - `GET /health/ready`: readiness probe con validaciones de configuracion
 - Seguridad por `x-api-key` para endpoints internos
+- Segmentacion por app usando `x-app-id` (ej: `farmacia`, `gimnasio`, `rrhh`)
 - Verificacion de firma `X-Hub-Signature-256` en webhook (si configuras `WHATSAPP_APP_SECRET`)
 - Idempotencia por `x-idempotency-key` para evitar envios duplicados
 - Logs en SQLite (`notifications.db`)
+
+## Arquitectura por carpetas
+
+```text
+app/
+  api/
+    dependencies.py
+    routes/
+      health.py
+      legal.py
+      notifications.py
+      webhook.py
+  core/
+    config.py
+    container.py
+    security.py
+  integrations/
+    whatsapp_provider.py
+  models/
+    schemas.py
+  repositories/
+    notification_store.py
+  main.py
+```
+
+Los archivos de raiz (`config.py`, `security.py`, `schemas.py`, `store.py`, `whatsapp.py`) se mantienen como wrappers de compatibilidad para no romper imports existentes.
 
 ## Requisitos
 
@@ -46,11 +73,23 @@ En el panel de tu app (WhatsApp):
 2. Verify token: el mismo valor de `WHATSAPP_VERIFY_TOKEN`
 3. Suscribe al menos `messages` y `message_status`.
 
+## Multi-app (farmacia, gimnasio, rrhh)
+
+Puedes usar el mismo bot para varias apps separando por `x-app-id` y una API key por app.
+
+Variables recomendadas:
+
+- `DEFAULT_APP_ID=farmacia`
+- `ERP_API_KEYS=farmacia:claveFarmacia,gimnasio:claveGym,rrhh:claveRRHH`
+
+Con eso, cada app solo ve sus propios logs en `GET /notifications/recent` y su idempotencia queda aislada por app.
+
 ## Probar envio desde ERP
 
 ```bash
 curl -X POST "http://localhost:8000/notify" \
   -H "Content-Type: application/json" \
+  -H "x-app-id: farmacia" \
   -H "x-api-key: pon-una-clave-segura" \
   -H "x-idempotency-key: venta-123-factura" \
   -d '{"telefono":"51987654321","mensaje":"Tu venta V-20260317-0004 fue facturada"}'
@@ -65,6 +104,7 @@ Usa este endpoint cuando quieras iniciar conversaciones fuera de la ventana de 2
 ```bash
 curl -X POST "http://localhost:8000/notify/template" \
   -H "Content-Type: application/json" \
+  -H "x-app-id: farmacia" \
   -H "x-api-key: pon-una-clave-segura" \
   -H "x-idempotency-key: venta-123-template" \
   -d '{
@@ -82,6 +122,8 @@ Ejemplo de plantilla sugerida en Meta:
 - Nombre: `venta_confirmada`
 - Categoria: `UTILITY`
 - Texto del body: `Hola {{1}}, tu compra {{2}} por S/ {{3}} fue registrada correctamente.`
+
+El valor de `language_code` debe coincidir exactamente con el idioma aprobado en Meta para esa plantilla. Si la traduccion aprobada es `es`, no funcionara enviar `es_PE`.
 
 ## Integracion sugerida con tu ERP
 
@@ -126,7 +168,9 @@ Este repo ya incluye `render.yaml` en la raiz (`Asuna/render.yaml`) para deploy 
 2. En Render: `New +` -> `Blueprint` y selecciona tu repo.
 3. Render detectara `render.yaml` y creara el servicio `asuna-whatsapp-bot`.
 4. En `Environment` completa los secretos:
-  - `ERP_API_KEY`
+  - `DEFAULT_APP_ID`
+  - `ERP_API_KEYS` (recomendado para multi-app)
+  - `ERP_API_KEY` (opcional, solo modo simple de una sola app)
   - `WHATSAPP_TOKEN`
   - `WHATSAPP_PHONE_NUMBER_ID`
   - `WHATSAPP_VERIFY_TOKEN`
